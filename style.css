@@ -64,7 +64,7 @@ html, body {
 
 .hint {
   position: fixed;
-  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 42px);
+  bottom: calc(max(12px, env(safe-area-inset-bottom)) + 60px);
   left: 16px;
   margin: 0;
   font-size: 10px;
@@ -79,7 +79,7 @@ html, body {
   bottom: max(12px, env(safe-area-inset-bottom));
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 20px 6px;
   max-width: calc(100% - 32px);
 }
 #axes button {
@@ -90,8 +90,21 @@ html, body {
   padding: 7px 10px;
   cursor: pointer;
   white-space: nowrap;
+  position: relative;
 }
 #axes button span { font-weight: 700; }
+/* Promedio ± desviación estándar, arriba a la izquierda del botón */
+#axes .stat {
+  position: absolute;
+  left: -1px;
+  bottom: calc(100% + 3px);
+  font: 700 11px/1 var(--font);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  pointer-events: none;
+}
+#axes .stat small { font-size: 9px; font-weight: 400; color: var(--mute); margin-left: 1px; }
 #axes button:hover { background: #eee; }
 #axes button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 
@@ -168,5 +181,7 @@ html, body {
   #axes button { flex: 1 1 0; padding: 9px 0; font-size: 12px; }
   #axes button { font-size: 0; }
   #axes button span { font-size: 12px; }
+  #axes .stat { font-size: 10px; }
+  #axes .stat small { font-size: 8px; }
   .hint { display: none; }
 }

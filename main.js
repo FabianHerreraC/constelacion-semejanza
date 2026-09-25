@@ -342,12 +342,20 @@ function depthFade() {
 
 // ---------- Botones de las 7 proposiciones ----------
 const axesNav = document.getElementById('axes');
+// Promedio y desviación estándar (muestral) de cada proposición
+const STATS = PROPS.map((_, i) => {
+  const xs = DATA.map(p => p.v[i]);
+  const mean = xs.reduce((s, x) => s + x, 0) / N;
+  const sd = Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / (N - 1));
+  return { mean, sd };
+});
 const axisBtns = PROPS.map((p, i) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.setAttribute('aria-pressed', 'false');
-  b.title = `${p.a} / ${p.b}`;
-  b.innerHTML = `<span>${p.num}</span> ${p.titulo}`;
+  const { mean, sd } = STATS[i];
+  b.title = `${p.a} / ${p.b}\nPromedio ${mean.toFixed(1)} · desviación estándar ${sd.toFixed(1)}`;
+  b.innerHTML = `<i class="stat">${Math.round(mean)}<small>±${Math.round(sd)}</small></i><span>${p.num}</span> ${p.titulo}`;
   b.addEventListener('click', () => toggleAxis(i));
   axesNav.appendChild(b);
   return b;

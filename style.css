@@ -44,6 +44,11 @@ html, body {
   font-size: 11px;
   color: var(--mute);
 }
+.head #filter {
+  margin-top: 6px;
+  color: var(--ink);
+  max-width: min(420px, calc(100vw - 180px));
+}
 
 .tools {
   position: fixed;

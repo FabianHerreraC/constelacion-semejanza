@@ -170,6 +170,7 @@ paintThreads(idle);
 
 // ---------- Selección ----------
 const panel = document.getElementById('panel');
+const filterEl = document.getElementById('filter');
 const whoEl = document.createElement('div');
 whoEl.className = 'who';
 const who = new CSS2DObject(whoEl);
@@ -198,6 +199,7 @@ function clear() {
   if (selected >= 0) scaleDot(selected, 1);
   selected = -1;
   selectedPole = null;
+  filterEl.hidden = true;
   who.visible = false;
   panel.hidden = true;
   poleNodes.forEach(n => n.el.classList.remove('on', 'dim'));
@@ -252,7 +254,8 @@ function selectPole(node) {
     return a === node.axis && toward(i) ? 0.15 + 0.55 * WEIGHT[s] : 0.03 * WEIGHT[s];
   });
   const count = DATA.filter((_, i) => toward(i)).length;
-  document.getElementById('count').textContent = `${count} de ${N}`;
+  filterEl.textContent = `${count} de ${N} se inclinan hacia «${PROPS[node.axis][node.side]}»`;
+  filterEl.hidden = false;
 }
 
 // Picking
@@ -281,7 +284,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) return;
   const i = pick(e);
   if (i >= 0) selectPerson(i);
-  else { clear(); document.getElementById('count').textContent = N; }
+  else clear();
 });
 renderer.domElement.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse') return;
@@ -292,8 +295,8 @@ renderer.domElement.addEventListener('pointermove', e => {
   if (i >= 0 && i !== selected) scaleDot(i, 1.6);
   stage.classList.toggle('pointing', i >= 0);
 });
-document.getElementById('close').addEventListener('click', () => { clear(); document.getElementById('count').textContent = N; });
-window.addEventListener('keydown', e => { if (e.key === 'Escape') { clear(); document.getElementById('count').textContent = N; } });
+document.getElementById('close').addEventListener('click', clear);
+window.addEventListener('keydown', e => { if (e.key === 'Escape') clear(); });
 
 // ---------- Pantalla completa ----------
 const fsBtn = document.getElementById('fs');
@@ -366,7 +369,7 @@ const axisBtns = PROPS.map((p, i) => {
 function toggleAxis(i) {
   active[i] = !active[i];
   axisBtns[i].setAttribute('aria-pressed', String(active[i]));
-  if (!active[i] && selectedPole && selectedPole.axis === i) { clear(); document.getElementById('count').textContent = N; }
+  if (!active[i] && selectedPole && selectedPole.axis === i) clear();
   TARGET = targetPositions();
 }
 window.addEventListener('keydown', e => {

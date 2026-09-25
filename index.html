@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Constelación — Imagen y semejanza</title>
+  <meta name="description" content="216 opiniones sobre siete proposiciones polares acerca de la inteligencia artificial, en un volumen tridimensional.">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <header class="head">
+    <h1>Imagen y semejanza</h1>
+    <p><span id="count">216</span> opiniones · 7 proposiciones</p>
+  </header>
+
+  <div class="tools">
+    <button id="fs" type="button" aria-label="Pantalla completa">Pantalla completa</button>
+  </div>
+
+  <aside id="panel" hidden>
+    <button id="close" type="button" aria-label="Cerrar">×</button>
+    <h2 id="p-name"></h2>
+    <p id="p-meta"></p>
+    <ol id="p-rows"></ol>
+  </aside>
+
+  <p class="hint">Arrastra para girar · clic en un punto para ver quién es</p>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

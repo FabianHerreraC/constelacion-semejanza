@@ -354,8 +354,11 @@ const axisBtns = PROPS.map((p, i) => {
   b.type = 'button';
   b.setAttribute('aria-pressed', 'false');
   const { mean, sd } = STATS[i];
-  b.title = `${p.a} / ${p.b}\nPromedio ${mean.toFixed(1)} · desviación estándar ${sd.toFixed(1)}`;
-  b.innerHTML = `<i class="stat">${Math.round(mean)}<small>±${Math.round(sd)}</small></i><span>${p.num}</span> ${p.titulo}`;
+  // Gana la proposición hacia la que cae el promedio; a menos de 5 puntos de 50 es un triunfo ajustado
+  const wins = mean < 50 ? 'a' : 'b';
+  const close = Math.abs(mean - 50) < 5;
+  b.title = `Gana: «${p[wins]}»${close ? ' (por poco)' : ''}\nPromedio ${mean.toFixed(1)} · desviación estándar ${sd.toFixed(1)}\n0 = ${p.a}\n100 = ${p.b}`;
+  b.innerHTML = `<i class="stat">${Math.round(mean)}<small>±${Math.round(sd)}</small><em class="kw${close ? ' close' : ''}">${p['k' + wins]}</em></i><span>${p.num}</span> ${p.titulo}`;
   b.addEventListener('click', () => toggleAxis(i));
   axesNav.appendChild(b);
   return b;

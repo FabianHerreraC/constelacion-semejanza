@@ -35,13 +35,20 @@ const DIRS = axisDirections(K);
 
 // ---------- Posiciones: proyección lineal 7D → 3D ----------
 const lean = v => v / 50 - 1;                    // 0..100 → −1..1
-const raw = DATA.map(p => {
-  const out = new THREE.Vector3();
-  p.v.forEach((v, i) => out.addScaledVector(DIRS[i], lean(v)));
-  return out;
-});
-const maxLen = Math.max(...raw.map(v => v.length()));
-const POS = raw.map(v => v.multiplyScalar((R * 0.82) / maxLen));
+// Sólo cuentan los ejes encendidos con los botones; al principio, ninguno.
+const active = new Array(K).fill(false);
+const fade = new Float32Array(K);                // 0..1, sigue a `active` con animación
+function targetPositions() {
+  const raw = DATA.map(p => {
+    const out = new THREE.Vector3();
+    p.v.forEach((v, i) => { if (active[i]) out.addScaledVector(DIRS[i], lean(v)); });
+    return out;
+  });
+  const maxLen = Math.max(1e-6, ...raw.map(v => v.length()));
+  return raw.map(v => v.multiplyScalar((R * 0.82) / maxLen));
+}
+const POS = DATA.map(() => new THREE.Vector3());  // posición actual (animada)
+let TARGET = targetPositions();
 
 // ---------- Escena ----------
 const stage = document.getElementById('stage');
@@ -71,13 +78,13 @@ controls.maxDistance = 90;
 controls.addEventListener('start', () => { controls.autoRotate = false; });
 
 // Ejes: una línea tenue de polo a polo
-{
-  const g = new THREE.BufferGeometry();
-  const a = [];
-  DIRS.forEach(d => { a.push(...d.clone().multiplyScalar(-R).toArray(), ...d.clone().multiplyScalar(R).toArray()); });
-  g.setAttribute('position', new THREE.Float32BufferAttribute(a, 3));
-  scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xe6e6e6 })));
-}
+const axisLines = DIRS.map(d => {
+  const g = new THREE.BufferGeometry().setFromPoints([d.clone().multiplyScalar(-R), d.clone().multiplyScalar(R)]);
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xcccccc, transparent: true, opacity: 0 }));
+  l.visible = false;
+  scene.add(l);
+  return l;
+});
 
 // Polos: nodos negros + etiquetas
 const poleNodes = [];
@@ -88,6 +95,7 @@ PROPS.forEach((p, i) => {
     const pos = DIRS[i].clone().multiplyScalar(side === 'a' ? -R : R);
     const m = new THREE.Mesh(poleGeo, inkMat);
     m.position.copy(pos);
+    m.scale.setScalar(0);
     scene.add(m);
 
     const el = document.createElement('div');
@@ -97,7 +105,8 @@ PROPS.forEach((p, i) => {
     const lab = new CSS2DObject(el);
     lab.position.copy(pos.clone().multiplyScalar(1.07));
     scene.add(lab);
-    const node = { axis: i, side, el, pos };
+    const node = { axis: i, side, el, pos, mesh: m, lab };
+    lab.visible = false;
     el.addEventListener('click', e => { e.stopPropagation(); selectPole(node); });
     poleNodes.push(node);
   }
@@ -108,6 +117,7 @@ const dotGeo = new THREE.SphereGeometry(1, 14, 10);
 const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 const dots = new THREE.InstancedMesh(dotGeo, dotMat, N);
 const BASE_SCALE = [];
+const FACTOR = new Float32Array(N).fill(1);      // agrandado por hover o selección
 const INK = new THREE.Color(0x111111), GHOST = new THREE.Color(0xd0d0d0), HOT = new THREE.Color(0x000000);
 {
   const m = new THREE.Matrix4();
@@ -144,10 +154,12 @@ const threads = new THREE.LineSegments(threadGeo, new THREE.LineBasicMaterial({ 
 threads.renderOrder = 1;
 scene.add(threads);
 
-// Hilos negros; la fuerza (0 = invisible, 1 = negro) va en el alfa.
-function paintThreads(strengthOf) {
+// Hilos negros; la fuerza (0 = invisible, 1 = negro) va en el alfa, por el fundido del eje.
+let strength = null;
+function paintThreads(strengthOf = strength) {
+  strength = strengthOf;
   for (let s = 0; s < N * K; s++) {
-    const k = strengthOf(s);
+    const k = strengthOf(s) * fade[s % K];
     tCol[s * 8 + 3] = k;
     tCol[s * 8 + 7] = k;
   }
@@ -170,11 +182,15 @@ function tintDots(fn) {
   for (let i = 0; i < N; i++) dots.setColorAt(i, fn(i));
   dots.instanceColor.needsUpdate = true;
 }
+const M = new THREE.Matrix4();
+function placeDot(i) {
+  const s = BASE_SCALE[i] * FACTOR[i];
+  M.makeScale(s, s, s).setPosition(POS[i]);
+  dots.setMatrixAt(i, M);
+}
 function scaleDot(i, f) {
-  const m = new THREE.Matrix4();
-  const s = BASE_SCALE[i] * f;
-  m.makeScale(s, s, s).setPosition(POS[i]);
-  dots.setMatrixAt(i, m);
+  FACTOR[i] = f;
+  placeDot(i);
   dots.instanceMatrix.needsUpdate = true;
 }
 
@@ -324,7 +340,69 @@ function depthFade() {
   });
 }
 
+// ---------- Botones de las 7 proposiciones ----------
+const axesNav = document.getElementById('axes');
+const axisBtns = PROPS.map((p, i) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.setAttribute('aria-pressed', 'false');
+  b.title = `${p.a} / ${p.b}`;
+  b.innerHTML = `<span>${p.num}</span> ${p.titulo}`;
+  b.addEventListener('click', () => toggleAxis(i));
+  axesNav.appendChild(b);
+  return b;
+});
+function toggleAxis(i) {
+  active[i] = !active[i];
+  axisBtns[i].setAttribute('aria-pressed', String(active[i]));
+  if (!active[i] && selectedPole && selectedPole.axis === i) { clear(); document.getElementById('count').textContent = N; }
+  TARGET = targetPositions();
+}
+window.addEventListener('keydown', e => {
+  const n = Number(e.key);
+  if (n >= 1 && n <= K && !e.metaKey && !e.ctrlKey) toggleAxis(n - 1);
+});
+
+// Anima el fundido de los ejes y el desplazamiento de los puntos hacia su destino
+function animate() {
+  let fading = false, moving = false;
+  for (let a = 0; a < K; a++) {
+    const goal = active[a] ? 1 : 0;
+    if (fade[a] === goal) continue;
+    fade[a] += (goal - fade[a]) * 0.12;
+    if (Math.abs(goal - fade[a]) < 0.004) fade[a] = goal;
+    fading = true;
+    const f = fade[a];
+    axisLines[a].visible = f > 0;
+    axisLines[a].material.opacity = f;
+  }
+  if (fading) poleNodes.forEach(n => {
+    const f = fade[n.axis];
+    n.mesh.scale.setScalar(f);
+    n.lab.visible = f > 0.02;
+    n.el.style.setProperty('--fade', f.toFixed(2));
+  });
+  for (let i = 0; i < N; i++) {
+    const p = POS[i], t = TARGET[i];
+    if (p.distanceToSquared(t) < 1e-6) { if (!p.equals(t)) { p.copy(t); moving = true; } continue; }
+    p.lerp(t, 0.08);
+    moving = true;
+  }
+  if (moving) {
+    for (let i = 0; i < N; i++) {
+      placeDot(i);
+      for (let a = 0; a < K; a++) tPos.set([POS[i].x, POS[i].y, POS[i].z], (i * K + a) * 6);
+    }
+    dots.instanceMatrix.needsUpdate = true;
+    threadGeo.attributes.position.needsUpdate = true;
+    dots.computeBoundingSphere();
+    if (selected >= 0) who.position.copy(POS[selected]);
+  }
+  if (fading) paintThreads();
+}
+
 renderer.setAnimationLoop(() => {
+  animate();
   controls.update();
   depthFade();
   renderer.render(scene, camera);

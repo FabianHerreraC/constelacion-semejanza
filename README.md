@@ -19,3 +19,7 @@ Exportar la consulta de Supabase como CSV (columnas `exhibicion,aparicion,nombre
 ## Local
 
     python3 -m http.server
+
+## Un cielo de palabras
+
+`cielo.html` es una pieza independiente: un campo de partículas en canvas 2D que se recorre con el teclado (espacio y flechas; f activa la pantalla completa). Un botón en la esquina superior derecha de cada página lleva a la otra.

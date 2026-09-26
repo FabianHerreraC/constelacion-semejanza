@@ -1,0 +1,737 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Un cielo de palabras</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Arimo:wght@400&family=Cormorant+Garamond:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #000000;
+    --ink: #f2f2ef;
+    --ink-dim: rgba(242, 242, 239, 0.42);
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #000000; --ink: #f2f2ef; } }
+  :root[data-theme="dark"] { --bg: #000000; --ink: #f2f2ef; }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body { height: 100%; margin: 0; background: var(--bg); overflow: hidden; }
+  body.idle { cursor: none; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #hint {
+    position: fixed; left: 28px; bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    font: italic 400 15px/1.4 "Cormorant Garamond", Georgia, serif;
+    color: var(--ink-dim); letter-spacing: 0.01em;
+    transition: opacity 1.6s ease; pointer-events: none; max-width: 90vw;
+  }
+  #hint.off { opacity: 0; }
+  #swap {
+    position: fixed; top: calc(18px + env(safe-area-inset-top, 0px)); right: 20px; z-index: 5;
+    font: italic 400 14px/1 "Cormorant Garamond", Georgia, serif; letter-spacing: 0.02em;
+    color: var(--ink-dim); text-decoration: none;
+    padding: 6px 10px; border: 1px solid rgba(242, 242, 239, 0.18);
+    transition: color .3s, border-color .3s, opacity 1.6s ease;
+  }
+  #swap:hover, #swap:focus-visible { color: var(--ink); border-color: rgba(242, 242, 239, 0.6); }
+  body.idle #swap { opacity: 0; }
+</style>
+</head>
+<body>
+<canvas id="sky" aria-label="Campo vectorial de palabras representado como una nube de puntos"></canvas>
+<canvas id="labels" aria-hidden="true"></canvas>
+<a id="swap" href="./" title="Ir a la constelación de opiniones">Constelación →</a>
+<div id="hint">Espacio o flecha derecha para avanzar, flecha izquierda para volver, f para pantalla completa, h para ocultar esta nota.</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- Datos: grupos semánticos ----------
+  const GROUPS = [
+    ["mar", "ola", "sal", "orilla", "marea", "espuma", "barca"],
+    ["duelo", "ausencia", "pérdida", "luto", "silencio", "memoria"],
+    ["madre", "hija", "cuna", "abrazo", "casa", "leche"],
+    ["sed", "fuente", "noche", "agua", "río", "camino"],
+    ["palabra", "nombre", "lengua", "voz", "verso", "grito"],
+    ["miedo", "sombra", "temblor", "amenaza", "huida"],
+    ["tiempo", "instante", "reloj", "eternidad", "ayer", "siempre"],
+    ["fuego", "ceniza", "llama", "calor", "hoguera"]
+  ];
+  const MAR = 0, DUELO = 1;
+
+  // ---------- Aleatoriedad reproducible ----------
+  let seed = 20260924;
+  const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const gauss = () => { let u = 0, v = 0; while (u === 0) u = rnd(); v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185 * v); };
+
+  // ---------- Geometría del cielo ----------
+  const nG = GROUPS.length;
+  const centers = [];
+  for (let i = 0; i < nG; i++) {
+    const y = 1 - (i + 0.5) / nG * 2, r = Math.sqrt(1 - y * y), th = i * 2.39996;
+    const R = 640 + gauss() * 70;
+    centers.push([Math.cos(th) * r * R + gauss() * 50, y * R * 0.8 + gauss() * 40, Math.sin(th) * r * R + gauss() * 50]);
+  }
+  // Constelaciones sin nombre, más lejanas
+  const anon = [];
+  for (let i = 0; i < 9; i++) {
+    const u = rnd() * 2 - 1, th = rnd() * 6.2832, s = Math.sqrt(1 - u * u), R = 950 + rnd() * 450;
+    const c = [Math.cos(th) * s * R, u * R * 0.7, Math.sin(th) * s * R];
+    const ns = []; for (let j = 0; j < 3 + Math.floor(rnd() * 3); j++) ns.push([c[0] + gauss() * 70, c[1] + gauss() * 50, c[2] + gauss() * 70]);
+    anon.push(ns);
+  }
+  const nuclei = []; // {g, word, p:[x,y,z]}
+  GROUPS.forEach((words, g) => {
+    words.forEach((w, j) => {
+      const c = centers[g];
+      const s = j === 0 ? 12 : 88;
+      nuclei.push({ g, word: w, first: j === 0, p: [c[0] + gauss() * s, c[1] + gauss() * s * 0.8, c[2] + gauss() * s] });
+    });
+  });
+  const groupNuclei = GROUPS.map((_, g) => nuclei.filter(n => n.g === g));
+
+  // Números como insectos alrededor de cada nodo
+  const BUGS = [];
+  const nodePts = nuclei.map(n => n.p).concat(anon.flat());
+  for (const np of nodePts) {
+    const m = 5 + Math.floor(rnd() * 2);
+    for (let j = 0; j < m; j++) BUGS.push({
+      p: np, r: 20 + rnd() * 30, a: rnd() * 6.2832, b: rnd() * 6.2832,
+      sp: (0.25 + rnd() * 0.5) * (rnd() < 0.5 ? -1 : 1), bob: rnd() * 6.2832,
+      fin: 84 + Math.floor(rnd() * 9), del: rnd() * 0.5, alpha: 0.6 + rnd() * 0.35
+    });
+  }
+
+  const STR = Array.from({ length: 100 }, (_, i) => (i < 10 ? "0" : "") + i);
+  const FONTS = {}; const bucket = {};
+  for (let fs = 9; fs <= 14; fs++) { FONTS[fs] = `italic 400 ${fs}px "Cormorant Garamond", Georgia, serif`; bucket[fs] = []; }
+  const N = 170000;
+  const P0 = new Float32Array(N * 3), P1 = new Float32Array(N * 3);
+  const B = new Float32Array(N), DEL = new Float32Array(N), PH = new Float32Array(N);
+  let k = 0;
+  const put = (x, y, z, b) => {
+    if (k >= N) return;
+    P1[k * 3] = x; P1[k * 3 + 1] = y; P1[k * 3 + 2] = z;
+    B[k] = b * (0.55 + 0.9 * rnd());
+    k++;
+  };
+
+  // Polvo ambiental (zonas vacías)
+  const nAnon = Math.floor(N * 0.12);
+  for (let i = 0; i < nAnon; i++) {
+    const ns = anon[Math.floor(rnd() * anon.length)];
+    const a = ns[Math.floor(rnd() * ns.length)], b = ns[Math.floor(rnd() * ns.length)], t = rnd(), th = 3 + 9 * Math.sin(Math.PI * t);
+    if (rnd() < 0.5) put(a[0] + gauss() * 11, a[1] + gauss() * 11, a[2] + gauss() * 11, 0.45);
+    else put(a[0] + (b[0] - a[0]) * t + gauss() * th, a[1] + (b[1] - a[1]) * t + gauss() * th, a[2] + (b[2] - a[2]) * t + gauss() * th, 0.3);
+  }
+  const nAmb = Math.floor(N * 0.1);
+  for (let i = 0; i < nAmb; i++) {
+    const u = rnd() * 2 - 1, th = rnd() * 6.2832, r = 1500 * Math.cbrt(rnd());
+    const s = Math.sqrt(1 - u * u);
+    put(Math.cos(th) * s * r, u * r * 0.6, Math.sin(th) * s * r, 0.14);
+  }
+  // Puentes entre grupos vecinos
+  const nBr = Math.floor(N * 0.07);
+  const pairs = [];
+  for (let a = 0; a < nG; a++) {
+    const d = centers.map((c, b) => [b, Math.hypot(c[0] - centers[a][0], c[1] - centers[a][1], c[2] - centers[a][2])]).filter(x => x[0] !== a).sort((x, y) => x[1] - y[1]);
+    pairs.push([a, d[0][0]], [a, d[1][0]]);
+  }
+  for (let i = 0; i < nBr; i++) {
+    const [a, b] = pairs[Math.floor(rnd() * pairs.length)];
+    const t = rnd(), ca = centers[a], cb = centers[b], th = 10 + 22 * Math.sin(Math.PI * t);
+    put(ca[0] + (cb[0] - ca[0]) * t + gauss() * th, ca[1] + (cb[1] - ca[1]) * t + gauss() * th, ca[2] + (cb[2] - ca[2]) * t + gauss() * th, 0.16);
+  }
+  // Nebulosas de cada grupo
+  const perGroup = Math.floor((N - k) / nG);
+  for (let g = 0; g < nG; g++) {
+    const ns = groupNuclei[g], c = centers[g];
+    const ctrl = [];
+    for (let i = 0; i < 10; i++) ctrl.push([gauss() * 45, gauss() * 45, gauss() * 45]);
+    for (let i = 0; i < perGroup; i++) {
+      const r = rnd();
+      if (r < 0.42) {
+        const n = rnd() < 0.2 ? ns[0] : ns[Math.floor(rnd() * ns.length)];
+        const s = n.first ? 14 : 9 + rnd() * 4;
+        put(n.p[0] + gauss() * s, n.p[1] + gauss() * s, n.p[2] + gauss() * s, 0.62);
+      } else if (r < 0.84) {
+        const ia = Math.floor(rnd() * ns.length); let ib = Math.floor(rnd() * ns.length); if (ib === ia) ib = (ib + 1) % ns.length;
+        const a = ns[ia].p, b = ns[ib].p, q = ctrl[(ia * 7 + ib) % 10];
+        const mx = (a[0] + b[0]) / 2 + q[0], my = (a[1] + b[1]) / 2 + q[1], mz = (a[2] + b[2]) / 2 + q[2];
+        const t = rnd(), u = 1 - t, th = 2.5 + 7 * Math.sin(Math.PI * t);
+        put(u * u * a[0] + 2 * u * t * mx + t * t * b[0] + gauss() * th,
+            u * u * a[1] + 2 * u * t * my + t * t * b[1] + gauss() * th,
+            u * u * a[2] + 2 * u * t * mz + t * t * b[2] + gauss() * th, 0.42);
+      } else {
+        put(c[0] + gauss() * 62, c[1] + gauss() * 42, c[2] + gauss() * 62, 0.2);
+      }
+    }
+  }
+  while (k < N) put(gauss() * 900, gauss() * 400, gauss() * 900, 0.1);
+
+  // Posiciones iniciales: ruido uniforme
+  for (let i = 0; i < N; i++) {
+    P0[i * 3] = (rnd() * 2 - 1) * 1700;
+    P0[i * 3 + 1] = (rnd() * 2 - 1) * 900;
+    P0[i * 3 + 2] = (rnd() * 2 - 1) * 800;
+    DEL[i] = rnd() * 0.45;
+    PH[i] = rnd() * 6.2832;
+  }
+
+  // ---------- Planos (tomas) ----------
+  const SHOTS = [
+    { name: "polvo", cond: 0, target: [0, 0, 0], dist: 1750, labels: "none" },
+    { name: "cielo", cond: 1, target: [0, 0, 0], dist: 1300, labels: "none" },
+    { name: "mar", cond: 1, target: centers[MAR], dist: 300, labels: MAR },
+    { name: "duelo", cond: 1, target: centers[DUELO], dist: 300, labels: DUELO },
+    { name: "recursión", kind: "text", cond: 1, target: [0, 0, 0], dist: 1250, labels: "none" },
+    { name: "ciclo", kind: "cycle", cond: 1, target: [0, 0, 0], dist: 1250, labels: "none" },
+    { name: "todo", cond: 1, target: [0, 0, 0], dist: 1250, labels: "heads" }
+  ];
+  let shot = 0, shotTime = 0;
+
+  // ---------- Lienzos ----------
+  const sky = document.getElementById("sky"), ctx = sky.getContext("2d");
+  const lab = document.getElementById("labels"), lctx = lab.getContext("2d");
+  let W, H, img, pix, acc, dprL;
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let w = innerWidth * dpr, h = innerHeight * dpr;
+    const s = Math.min(1, Math.sqrt(2.1e6 / (w * h)));
+    W = Math.max(2, Math.round(w * s)); H = Math.max(2, Math.round(h * s));
+    sky.width = W; sky.height = H;
+    img = ctx.createImageData(W, H); pix = new Uint32Array(img.data.buffer); acc = new Float32Array(W * H);
+    dprL = dpr; lab.width = Math.round(innerWidth * dpr); lab.height = Math.round(innerHeight * dpr);
+    lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  addEventListener("resize", resize); resize();
+
+  // Ruido blanco de fondo y curva tonal
+  const NOISE = new Uint8Array(1 << 18);
+  for (let i = 0; i < NOISE.length; i++) { const r = rnd(); NOISE[i] = r < 0.006 ? 22 + rnd() * 60 : Math.floor(rnd() * rnd() * 11); }
+  const LUT = new Uint8Array(2048);
+  for (let i = 0; i < 2048; i++) LUT[i] = Math.round(255 * (1 - Math.exp(-i / 340 * 1.25)));
+  const SPL = new Int8Array(4096); for (let i = 0; i < 4096; i++) SPL[i] = Math.round(gauss() * 1.1);
+
+  // ---------- Animación 2: la frase recursiva ----------
+  const REC = SHOTS.findIndex(x => x.kind === "text");
+  const DX = new Float32Array(N), DY = new Float32Array(N);
+  for (let i = 0; i < N; i++) { DX[i] = rnd(); DY[i] = rnd(); }
+  const PT = new Int16Array(N).fill(-1), GX = new Float32Array(N), GY = new Float32Array(N);
+  const PGX = new Float32Array(N), PGY = new Float32Array(N), PGD = new Float32Array(N);
+  function tokenize(prefix, str) {
+    const out = []; let n = 0;
+    str.split(" ").forEach(word => {
+      const m = word.match(/^(.*?)([.,:;]*)$/);
+      m[1].split("|").forEach((piece, j) => { if (piece) out.push({ key: prefix + (n++), text: piece, ws: j === 0 }); });
+      for (const ch of m[2]) out.push({ key: prefix + (n++), text: ch, ws: false });
+    });
+    return out;
+  }
+  const CORE = [["El", 1], ["mar", 1], ["que", 1], ["cruz", 1], ["amos", 0], ["de", 1], ["noche", 1], ["nos", 1], ["cambi", 1], ["ó", 0], [".", 0]]
+    .map(([t, w], i) => ({ key: "c" + i, text: t, ws: !!w }));
+  const PRE = tokenize("a", "Nadie sabía cómo nombrar|lo.");
+  const POST = tokenize("b", "Desde entonces busc|amos, en cada palabra, la orilla que dej|amos atrás.");
+  const PAR2 = tokenize("d", "Quien tiene lengua cruza el mar, decían los viejos del puerto. Cada frase guarda otra frase adentro, y esa guarda otra, como la marea guarda a la luna.");
+  const PAR3 = tokenize("e", "Así crece el pensamiento: una palabra abre la puerta de la siguiente, la oración se vuelve párrafo, el párrafo se vuelve memoria, y la memoria vuelve a empezar.");
+  const ALLT = CORE.concat(PRE, POST, PAR2, PAR3);
+  const TK = {}; ALLT.forEach((t, i) => { t.i = i; t.core = t.key[0] === "c"; TK[t.key] = t; });
+  const ck = ids => ids.map(i => "c" + i), ks = a => a.map(t => t.key);
+  const S3 = ck([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  const PARA1 = ks(PRE).concat(S3, ks(POST));
+  const STEPS = [
+    { paras: [ck([0, 1, 10])], fit: 0.16, iv: 0.6, hold: 2.4, idx: 1 },
+    { paras: [ck([0, 1, 2, 3, 4, 10])], fit: 0.3, iv: 0.5, hold: 2.4, idx: 1 },
+    { paras: [S3], fit: 0.42, iv: 0.45, hold: 3, idx: 1 },
+    { paras: [PARA1], fit: 0.46, lw: 22, iv: 0.16, hold: 3.2 },
+    { paras: [PARA1, ks(PAR2), ks(PAR3)], fit: 0.46, lw: 22, iv: 0.055, hold: 3.5 },
+    { paras: [PARA1, ks(PAR2), ks(PAR3)], fit: 0.46, lw: 22, iv: 0, hold: Infinity, zoom: 0.24, page: true }
+  ];
+  const BR = [
+    { f: "c2", t: "c4", d: 1, st: 1 }, { f: "c2", t: "c6", d: 1, st: 2 }, { f: "c5", t: "c6", d: 2, st: 2 },
+    { f: "c0", t: "c10", d: 1, st: 3 }
+  ];
+  const brA = new Float32Array(BR.length);
+  const NTK = ALLT.length;
+  const TOX = new Float32Array(NTK), TOY = new Float32Array(NTK), TD = new Float32Array(NTK).fill(1), TCOUNT = new Float32Array(NTK), TPRES = new Uint8Array(NTK), TAPP = new Float64Array(NTK), TCX = new Float32Array(NTK), TCY = new Float32Array(NTK), TGX = new Float32Array(NTK), TGY = new Float32Array(NTK);
+  const SANS = '"Helvetica Neue", Helvetica, Arimo, Arial, sans-serif';
+  const FONT_T = '400 100px ' + SANS;
+  let SPACE = 0.25, LAY = [], textReady = false;
+
+  function layout(step) {
+    const pos = {}, lh = 1.32, pg = 0.6, lw = step.lw || 1e9;
+    let y = 0, maxW = 0;
+    step.paras.forEach((para, pi) => {
+      const words = [];
+      para.forEach(k => { const t = TK[k]; if (t.ws || !words.length) words.push([t]); else words[words.length - 1].push(t); });
+      let x = 0;
+      words.forEach(w => {
+        const ww = w.reduce((a, t) => a + t.w, 0);
+        if (x > 0 && x + SPACE + ww > lw) { maxW = Math.max(maxW, x); x = 0; y += lh; }
+        else if (x > 0) x += SPACE;
+        w.forEach(t => { pos[t.key] = [x, y]; x += t.w; });
+      });
+      maxW = Math.max(maxW, x);
+      if (pi < step.paras.length - 1) y += lh + pg;
+    });
+    const top = -0.72, bottom = y + 0.26, cyy = (top + bottom) / 2;
+    for (const k in pos) { pos[k][0] -= maxW / 2; pos[k][1] -= cyy; }
+    return { pos, bw: maxW, bh: bottom - top, order: step.paras.flat() };
+  }
+
+  function buildText() {
+    const mc = document.createElement("canvas").getContext("2d");
+    mc.font = FONT_T; SPACE = mc.measureText(" ").width / 100;
+    const gcv = document.createElement("canvas"); gcv.width = 900; gcv.height = 200;
+    const g = gcv.getContext("2d", { willReadFrequently: true });
+    ALLT.forEach(t => {
+      t.w = mc.measureText(t.text).width / 100;
+      g.clearRect(0, 0, 900, 200); g.font = FONT_T; g.fillStyle = "#fff"; g.fillText(t.text, 20, 140);
+      const d = g.getImageData(0, 0, 900, 200).data, pts = [];
+      for (let y = 0; y < 200; y++) for (let x = 0; x < 900; x++) if (d[(y * 900 + x) * 4 + 3] > 110) pts.push((x - 20) / 100, (y - 140) / 100);
+      t.pts = new Float32Array(pts); t.ink = Math.max(1, pts.length / 2);
+    });
+    LAY = STEPS.map(layout);
+    // Reparto de partículas entre tokens
+    const perm = new Uint32Array(N); for (let i = 0; i < N; i++) perm[i] = i;
+    for (let i = N - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+    const NT = Math.floor(N * 0.66), wt = t => t.ink * (t.core ? 5 : 1.25);
+    const wsum = ALLT.reduce((a, t) => a + wt(t), 0);
+    let idx = 0;
+    ALLT.forEach(t => {
+      const n = Math.round(NT * wt(t) / wsum);
+      for (let j = 0; j < n && idx < N; j++, idx++) {
+        const q = perm[idx], p = Math.floor(rnd() * (t.pts.length / 2));
+        TCOUNT[t.i]++; PT[q] = t.i; const hz = rnd() < 0.3 ? 0.05 : 0.004;
+        GX[q] = t.pts[p * 2] + gauss() * hz; GY[q] = t.pts[p * 2 + 1] + gauss() * hz;
+      }
+    });
+    // Páginas vecinas: el texto dentro de un texto mayor
+    const L4 = LAY[4], bw = L4.bw, bh = L4.bh, gx = bw * 0.2, gy = bh * 0.3, nl = Math.max(3, Math.round((bh - 1) / 1.32) + 1);
+    const lens = []; for (let b = 0; b < 25; b++) { lens.push([]); for (let l = 0; l < nl; l++) lens[b].push(l === nl - 1 ? 0.25 + rnd() * 0.5 : 0.82 + rnd() * 0.18); }
+    for (; idx < N; idx++) {
+      const q = perm[idx];
+      let c, r; do { c = Math.floor(rnd() * 5) - 2; r = Math.floor(rnd() * 5) - 2; } while (c === 0 && r === 0);
+      const b = (c + 2) * 5 + (r + 2), l = Math.floor(rnd() * nl);
+      let x; for (let tries = 0; tries < 6; tries++) { x = rnd() * lens[b][l] * bw; if (((x * 1.9 + l * 0.37 + b * 0.13) % 1) > 0.13) break; }
+      PGX[q] = c * (bw + gx) - bw / 2 + x;
+      PGY[q] = r * (bh + gy) - bh / 2 + 0.72 + l * 1.32 - 0.28 + gauss() * 0.11;
+      PGD[q] = Math.max(Math.abs(c), Math.abs(r)) * 0.45 + rnd() * 0.35;
+    }
+    textReady = true;
+  }
+  const fontLoad = document.fonts ? Promise.race([document.fonts.load("400 100px Arimo").catch(() => {}), new Promise(r => setTimeout(r, 3000))]) : Promise.resolve();
+  fontLoad.then(buildText, buildText);
+
+  let dens = 1, txMix = 0, tStep = -1, tTime = 0, pageF = 0, fontPx = 100, lastApp = 0;
+  const stepFont = s => {
+    const L = LAY[Math.min(s, 4)], st = STEPS[s];
+    return Math.min(H * 0.075, st.fit * W / L.bw, 0.6 * H / L.bh) * (st.zoom || 1);
+  };
+  function resetText() { tStep = -1; tTime = 0; pageF = 0; TPRES.fill(0); TAPP.fill(Infinity); brA.fill(0); }
+  function startStep(s) {
+    if (!textReady || s >= STEPS.length) return;
+    tStep = s; const L = LAY[s], st = STEPS[s];
+    let j = 0; lastApp = tTime;
+    // Centro de la frase anterior: de ahí nace la siguiente
+    let ox = 0, oy = -0.3, on = 0, sx0 = 0, sy0 = 0;
+    for (let i = 0; i < NTK; i++) if (TPRES[i]) { sx0 += TCX[i] + ALLT[i].w / 2; sy0 += TCY[i] - 0.33; on++; }
+    if (on) { ox = sx0 / on; oy = sy0 / on; }
+    L.order.forEach(k => {
+      const t = TK[k];
+      TGX[t.i] = L.pos[k][0]; TGY[t.i] = L.pos[k][1];
+      if (!TPRES[t.i]) { TPRES[t.i] = 1; TCX[t.i] = TGX[t.i]; TCY[t.i] = TGY[t.i]; TOX[t.i] = ox; TOY[t.i] = oy; TAPP[t.i] = tTime + 0.3 + j * st.iv; lastApp = TAPP[t.i]; j++; }
+    });
+    if (s === 0) fontPx = stepFont(0);
+  }
+  function updateText(dt) {
+    const on = shot === REC || shot === CYC;
+    txMix += Math.sign((on ? 1 : 0) - txMix) * Math.min(Math.abs((on ? 1 : 0) - txMix), dt / 2.4);
+    if (fmActive) updateCycle(dt);
+    if (shot !== REC) return;
+    tTime += dt;
+    if (tStep < 0) { if (tTime > 2.8) startStep(0); return; }
+    const st = STEPS[tStep];
+    if (tTime > lastApp + 0.9 + st.hold && tStep < STEPS.length - 1) startStep(tStep + 1);
+    const k1 = 1 - Math.exp(-dt * 2.2), k2 = 1 - Math.exp(-dt * (st.zoom ? 0.5 : 2.2));
+    for (let i = 0; i < NTK; i++) if (TPRES[i]) { TCX[i] += (TGX[i] - TCX[i]) * k1; TCY[i] += (TGY[i] - TCY[i]) * k1; }
+    fontPx += (stepFont(tStep) - fontPx) * k2;
+    const px2 = (fontPx / 100) * (fontPx / 100);
+    for (let i = 0; i < NTK; i++) TD[i] = Math.min(1, Math.max(0.32, 0.4 * ALLT[i].ink * px2 / Math.max(1, TCOUNT[i])));
+    pageF = st.page ? Math.min(1, pageF + dt / 7) : Math.max(0, pageF - dt);
+  }
+
+  // ---------- Animación 3: el ciclo ----------
+  const CYC = SHOTS.findIndex(x => x.kind === "cycle");
+  const RS = 0.085;
+  const FRM = [0, 1, 2, 3, 4].map(() => ({ x: new Float32Array(N), y: new Float32Array(N), z: new Float32Array(N), b: new Float32Array(N) }));
+  const HR = new Float32Array(N), HTH = new Float32Array(N), HK = new Uint8Array(N);
+  const BX = new Float32Array(N), BY = new Float32Array(N), BZ = new Float32Array(N);
+  for (let i = 0; i < N; i++) { const s0 = rnd() < 0.2 ? 0.055 : 0.02; BX[i] = gauss() * s0; BY[i] = gauss() * s0; BZ[i] = gauss() * s0; }
+  const dustPt = (F, i, b) => { F.x[i] = (rnd() - 0.5) * 1.9; F.y[i] = (rnd() - 0.5) * 1.05; F.z[i] = (rnd() - 0.5) * 1.2; F.b[i] = b; };
+  const TRI = [[-90, 30, 150], [90, 210, 330]].map(t => t.map(d => [Math.cos(d * Math.PI / 180) * 0.31, Math.sin(d * Math.PI / 180) * 0.31]));
+  for (let i = 0; i < N; i++) {
+    // Agujero negro
+    let r0 = rnd();
+    if (r0 < 0.5) { HK[i] = 0; HR[i] = 0.125 + 0.34 * Math.pow(rnd(), 1.8); FRM[0].b[i] = 0.5; }
+    else if (r0 < 0.78) { HK[i] = 1; HR[i] = 0.125 + 0.34 * Math.pow(rnd(), 3.2); FRM[0].b[i] = 0.55; }
+    else if (r0 < 0.86) { HK[i] = 2; HR[i] = RS * 1.04 + gauss() * 0.008; FRM[0].b[i] = 0.55; }
+    else { HK[i] = 3; FRM[0].b[i] = 0.07; }
+    HTH[i] = rnd() * 6.2832;
+    // Ojo (la sombra del agujero se vuelve pupila)
+    const E = FRM[1], e = rnd(), EW = 0.44, EH = 0.19;
+    if (e < 0.24) {
+      const u = rnd() * 2 - 1, up = rnd() < 0.55;
+      E.x[i] = u * EW + gauss() * 0.003;
+      E.y[i] = EH * (1 - u * u) * (up ? -1 : 0.85) + gauss() * 0.012;
+      E.b[i] = 0.45;
+    } else if (e < 0.66) {
+      const th = rnd() * 6.2832, rr = RS + (0.125 - RS) * Math.pow(rnd(), 0.8);
+      E.x[i] = Math.cos(th) * rr; E.y[i] = Math.sin(th) * rr; E.b[i] = 0.3 + 0.2 * (1 - (rr - RS) / (0.125 - RS));
+    } else if (e < 0.7) {
+      const th = rnd() * 6.2832, rr = 0.125 + gauss() * 0.01; E.x[i] = Math.cos(th) * rr; E.y[i] = Math.sin(th) * rr; E.b[i] = 0.4;
+    } else if (e < 0.713) {
+      const th = rnd() * 6.2832, rr = 0.1 + rnd() * 0.03; E.x[i] = Math.cos(th) * rr; E.y[i] = Math.sin(th) * rr; E.b[i] = 0.35;
+    } else if (e < 0.88) {
+      let x, y; do { const u = rnd() * 2 - 1; x = u * EW; y = (rnd() * 2 - 1) * EH * (1 - u * u); if (y > 0) y *= 0.85; } while (Math.hypot(x, y) < 0.13);
+      E.x[i] = x; E.y[i] = y; E.b[i] = 0.12 * (1 - Math.abs(x / EW));
+    } else dustPt(E, i, 0.06);
+    // Cruz
+    const C = FRM[2], c = rnd();
+    if (c < 0.85) {
+      let x, y;
+      if (rnd() < 0.63) { x = (rnd() - 0.5) * 0.075; y = -0.36 + rnd() * 0.7; } else { x = (rnd() - 0.5) * 0.42; y = -0.15 + (rnd() - 0.5) * 0.075; }
+      const halo = c > 0.62;
+      C.x[i] = x + gauss() * (halo ? 0.045 : 0.01); C.y[i] = y + gauss() * (halo ? 0.045 : 0.01); C.b[i] = halo ? 0.14 : 0.4;
+    } else dustPt(C, i, 0.06);
+    // Estrella de David
+    const Sd = FRM[3], sd = rnd();
+    if (sd < 0.85) {
+      const tr = TRI[rnd() < 0.5 ? 0 : 1], ed = Math.floor(rnd() * 3), a = tr[ed], b = tr[(ed + 1) % 3], t = rnd();
+      const ex = b[0] - a[0], ey = b[1] - a[1], L = Math.hypot(ex, ey), nx = -ey / L, ny = ex / L;
+      const halo = sd > 0.6, w = gauss() * (halo ? 0.05 : 0.016);
+      Sd.x[i] = a[0] + ex * t + nx * w; Sd.y[i] = a[1] + ey * t + ny * w; Sd.b[i] = halo ? 0.14 : 0.4;
+    } else dustPt(Sd, i, 0.06);
+    // Profundidad de las formas
+    if (e < 0.88) FRM[1].z[i] = 0.45 * FRM[1].x[i] * FRM[1].x[i] + 0.3 * FRM[1].y[i] * FRM[1].y[i] - (Math.hypot(FRM[1].x[i], FRM[1].y[i]) < 0.13 ? 0.03 : 0);
+    if (c < 0.85) FRM[2].z[i] = (rnd() - 0.5) * 0.075 + (c > 0.62 ? gauss() * 0.03 : 0);
+    if (sd < 0.85) FRM[3].z[i] = (rnd() - 0.5) * 0.03 + (FRM[3].y[i] < 9 ? (rnd() < 0.5 ? 0.012 : -0.012) : 0) + (sd > 0.6 ? gauss() * 0.03 : 0);
+    // El punto
+    FRM[4].x[i] = gauss() * 0.006; FRM[4].y[i] = gauss() * 0.006; FRM[4].b[i] = 0.3;
+  }
+  const CSTAGES = [{ f: 0, dur: 11, md: 3.2 }, { f: 1, dur: 8, md: 2.8 }, { f: 2, dur: 7, md: 2.8 }, { f: 3, dur: 7, md: 2.8 }, { f: 4, dur: 2.6, md: 1.8 }];
+  let fmActive = false, cStage = 0, cT = 0, fromF = -1, toF = 0, holeT = 0;
+  let _x = 0, _y = 0, _b = 0;
+  const ROT = [null, [1, 0, 1, 0], [1, 0, 1, 0], [1, 0, 1, 0]];
+  function startCycle() { fmActive = true; cStage = 0; cT = 0; fromF = -1; toF = 0; holeT = 0; }
+  function advanceStage() {
+    if (cStage >= CSTAGES.length - 1) { finishCycle(); return; }
+    cStage++; fromF = toF; toF = CSTAGES[cStage].f; cT = 0;
+  }
+  function finishCycle() {
+    // El punto se abre en el polvo inicial: vuelve la primera toma
+    cond = 0; cam.tx = cam.ty = cam.tz = 0; cam.d = SHOTS[0].dist;
+    shot = 0; shotTime = 0;
+  }
+  function updateCycle(dt) {
+    holeT += dt;
+    for (let f = 1; f <= 3; f++) {
+      const ya = f === 1 ? Math.sin(holeT * 0.4) * 0.8 : holeT * 0.42 + f;
+      const pa = f === 1 ? Math.sin(holeT * 0.31) * 0.3 : 0.22 * Math.sin(holeT * 0.23 + f);
+      ROT[f] = [Math.cos(ya), Math.sin(ya), Math.cos(pa), Math.sin(pa)];
+    }
+    if (shot === CYC) { cT += dt; if (cT > CSTAGES[cStage].dur) advanceStage(); }
+    else if (txMix <= 0) fmActive = false;
+  }
+  function fpos(f, i, hw, hh) {
+    if (f === 0) {
+      const k = HK[i];
+      if (k === 3) { _x = DX[i] * W; _y = DY[i] * H; _b = 0.07; return; }
+      const r = HR[i], th = HTH[i] + 0.45 * Math.pow(0.125 / Math.max(r, 0.09), 1.5) * holeT, c = Math.cos(th), sn = Math.sin(th);
+      let x, y, b = FRM[0].b[i];
+      if (k === 0) { x = r * c; y = r * sn * 0.1; b *= (0.55 - 0.45 * c) * Math.min(1.8, 1.3 * Math.pow(0.125 / r, 1.2)); if (sn < 0 && Math.abs(x) < RS * 1.05) b = 0; }
+      else if (k === 1) { const rl = RS * 1.07 + (r - 0.125) * (sn < 0 ? 0.3 : 0.14); x = rl * c * 1.02; y = rl * sn; b *= (sn < 0 ? 1.2 : 0.7) * (0.75 - 0.3 * c) * (0.6 + 0.8 * Math.abs(sn)); }
+      else { x = r * c; y = r * sn; }
+      _x = hw + (x + BX[i] * 0.55) * H; _y = hh + (y + BY[i] * 0.55) * H; _b = b; return;
+    }
+    const F = FRM[f];
+    const bf = f === 4 ? 0.15 : 1;
+    _x = hw + (F.x[i] + BX[i] * bf) * H; _y = hh + (F.y[i] + BY[i] * bf) * H;
+    if (f >= 1 && f <= 3) {
+      const r = ROT[f], x = F.x[i] + BX[i], y = F.y[i] + BY[i], z = F.z[i] + BZ[i];
+      const x1 = x * r[0] + z * r[1], z1 = -x * r[1] + z * r[0];
+      const y1 = y * r[2] - z1 * r[3], z2 = y * r[3] + z1 * r[2];
+      const pp = 2.2 / Math.max(0.5, 2.2 + z2);
+      _x = hw + x1 * pp * H; _y = hh + y1 * pp * H;
+    }
+    _b = F.b[i] * (0.88 + 0.12 * Math.sin(holeT * 1.3 + PH[i] * 0.2));
+  }
+
+  // ---------- Cámara ----------
+  const cam = { tx: 0, ty: 0, tz: 0, d: 1750, yaw: 0.4, pitch: 0.2 };
+  let cond = 0, gain = 1;
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const labelAlpha = new Float32Array(nuclei.length);
+  let nameA = 0;
+
+  let last = performance.now(), T = 0, lcg = 12345;
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now; T += dt; shotTime += dt;
+    const S = SHOTS[shot];
+    const kc = 1 - Math.exp(-dt * 0.55);
+    cam.tx += (S.target[0] - cam.tx) * kc; cam.ty += (S.target[1] - cam.ty) * kc; cam.tz += (S.target[2] - cam.tz) * kc;
+    cam.d += (S.dist - cam.d) * kc;
+    cam.yaw += dt * (reduce ? 0.004 : 0.028);
+    cond += Math.sign(S.cond - cond) * Math.min(Math.abs(S.cond - cond), dt / 11);
+    updateText(dt);
+
+    const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    const f = H * 0.95, D = cam.d, hw = W / 2, hh = H / 2;
+    const bright = Math.pow(1300 / D, 0.35);
+    acc.fill(0);
+
+    for (let i = 0; i < N; i++) {
+      let c = (cond - DEL[i]) / 0.55; c = c < 0 ? 0 : c > 1 ? 1 : c; c = c * c * (3 - 2 * c);
+      const i3 = i * 3, w = 1 - c;
+      const wob = Math.sin(T * 0.7 + PH[i]) * (2 + 10 * w);
+      let x = P0[i3] * w + P1[i3] * c + wob - cam.tx;
+      let y = P0[i3 + 1] * w + P1[i3 + 1] * c + wob * 0.6 - cam.ty;
+      let z = P0[i3 + 2] * w + P1[i3 + 2] * c - wob - cam.tz;
+      const xr = x * cy - z * sy, zr = x * sy + z * cy;
+      const yr = y * cp - zr * sp, zz = y * sp + zr * cp + D;
+      lcg = (lcg * 1664525 + 1013904223) >>> 0;
+      const flick = 0.5 + 0.5 * (lcg / 4294967296);
+      let ok = zz >= 12, sx = 0, syy = 0, bb = 0, pr = 0;
+      if (ok) {
+        const inv = f / zz;
+        sx = hw + xr * inv; syy = hh + yr * inv;
+        bb = (B[i] * w * 0.35 + B[i] * c) * flick * bright * Math.min(1.6, Math.sqrt(D / zz));
+        pr = 1.5 * inv;
+      }
+      if (txMix > 0) {
+        let q = (txMix - DEL[i] * 0.8) / 0.64; q = q < 0 ? 0 : q > 1 ? 1 : q; q = q * q * (3 - 2 * q);
+        if (q > 0) {
+          const dx = DX[i] * W + Math.sin(T * 0.3 + PH[i]) * 5, dy = DY[i] * H + Math.cos(T * 0.27 + PH[i]) * 5;
+          let tx = dx, ty = dy, tb = 0.09;
+          const tk = PT[i];
+          if (tk >= 0 && TPRES[tk]) {
+            let a = (tTime - TAPP[tk]) / 1.3 - DEL[i] * 0.9; a = a < 0 ? 0 : a > 1 ? 1 : a; a = a * a * (3 - 2 * a);
+            if (a > 0) {
+              const o = 1 - a, spread = 0.06 * o;
+              tx = hw + (TOX[tk] + GX[i] * spread * 4 + (TCX[tk] + GX[i] - TOX[tk]) * a) * fontPx;
+              ty = hh + (TOY[tk] + GY[i] * spread * 4 + (TCY[tk] + GY[i] - TOY[tk]) * a) * fontPx;
+              tb = 0.85 * Math.min(1, a * 1.6) * TD[tk];
+            }
+          } else if (tk < 0 && pageF > 0) {
+            let a = (pageF * 2.6 - PGD[i]) / 0.7; a = a < 0 ? 0 : a > 1 ? 1 : a; a = a * a * (3 - 2 * a);
+            if (a > 0) {
+              tx = hw + PGX[i] * a * fontPx;
+              ty = hh + PGY[i] * a * fontPx;
+              tb = 0.3 * Math.min(1, a * 1.6);
+            }
+          }
+          if (fmActive) {
+            let m = (cT / CSTAGES[cStage].md - DEL[i]) / 0.55; m = m < 0 ? 0 : m > 1 ? 1 : m; m = m * m * (3 - 2 * m);
+            let ax = tx, ay = ty, ab = tb;
+            if (fromF >= 0) { fpos(fromF, i, hw, hh); ax = _x; ay = _y; ab = _b; }
+            if (m > 0) { fpos(toF, i, hw, hh); tx = ax + (_x - ax) * m; ty = ay + (_y - ay) * m; tb = ab + (_b - ab) * m; }
+            else { tx = ax; ty = ay; tb = ab; }
+          }
+          if (!ok) { sx = tx; syy = ty; bb = 0; ok = true; }
+          sx += (tx - sx) * q; syy += (ty - syy) * q;
+          bb = bb * (1 - q) + tb * flick * q; pr *= (1 - q);
+        }
+      }
+      if (!ok || sx < 0 || syy < 0 || sx >= W || syy >= H) continue;
+      if (pr < 1.2) {
+        acc[(syy | 0) * W + (sx | 0)] += bb;
+      } else {
+        const n = Math.min(9, Math.round(pr * pr * 0.6)), sc = Math.min(pr, 5), q = bb / Math.sqrt(n);
+        for (let j = 0; j < n; j++) {
+          const o = (lcg >>> (j & 7)) & 4094;
+          const px = (sx + SPL[o] * sc) | 0, py = (syy + SPL[o + 1] * sc) | 0;
+          if (px >= 0 && py >= 0 && px < W && py < H) acc[py * W + px] += q;
+        }
+      }
+    }
+
+    // Exposición automática y ruido blanco
+    let sum = 0, cnt = 0;
+    for (let i = 0; i < acc.length; i += 7) { const a = acc[i]; if (a > 0) { sum += a; cnt++; } }
+    if (cnt > 0) { const target = (0.3 + 0.25 * cond) * (1 - 0.35 * txMix) / (sum / cnt); gain += (Math.min(6, Math.max(0.15, target)) - gain) * 0.06; }
+    const g = gain * 340, off = (lcg & 0x3ffff), mask = NOISE.length - 1;
+    for (let i = 0, L = acc.length; i < L; i++) {
+      let v = acc[i] * g; v = v > 2047 ? 2047 : v;
+      let o = LUT[v | 0] + NOISE[(i + off) & mask]; o = o > 255 ? 255 : o;
+      pix[i] = 0xff000000 | (o << 16) | (o << 8) | o;
+    }
+    ctx.putImageData(img, 0, 0);
+
+    drawLabels(dt, f, D, cy, sy, cp, sp);
+    requestAnimationFrame(frame);
+  }
+
+  function drawLabels(dt, f, D, cy, sy, cp, sp) {
+    const cw = innerWidth, ch = innerHeight, scale = cw / W;
+    lctx.clearRect(0, 0, cw, ch);
+    const S = SHOTS[shot];
+    const size = Math.max(15, Math.min(28, cw / 62));
+    const skyA = 1 - txMix;
+    nameA += ((shot === 0 ? 1 : 0) - nameA) * (1 - Math.exp(-dt * (shot === 0 ? 0.8 : 3)));
+    if (nameA > 0.01) {
+      lctx.globalAlpha = nameA; lctx.fillStyle = "#ffffff"; lctx.textAlign = "center"; lctx.textBaseline = "middle";
+      lctx.font = `400 ${Math.round(Math.max(10, Math.min(13, cw / 130)))}px ${SANS}`;
+      lctx.shadowColor = "rgba(0,0,0,0.9)"; lctx.shadowBlur = 12;
+      lctx.fillText("Fabian Herrera", cw / 2, ch / 2); lctx.shadowBlur = 0;
+      lctx.textAlign = "start"; lctx.textBaseline = "alphabetic"; lctx.globalAlpha = 1;
+    }
+    if (txMix > 0.02) drawTextOverlay(dt, cw, ch, scale);
+    if (skyA < 0.01) return;
+    // Números
+    lctx.fillStyle = "#f2f2ef";
+    lctx.textBaseline = "alphabetic";
+    for (const bgi of BUGS) {
+      let c = (cond - bgi.del) / 0.5; c = c < 0 ? 0 : c > 1 ? 1 : c; c = c * c * (3 - 2 * c);
+      const ang = bgi.a + T * bgi.sp, r = bgi.r * (0.6 + 0.4 * c);
+      const x = bgi.p[0] + Math.cos(ang) * r - cam.tx;
+      const y = bgi.p[1] + Math.sin(T * 0.9 + bgi.bob) * r * 0.5 - cam.ty;
+      const z = bgi.p[2] + Math.sin(ang + bgi.b) * r - cam.tz;
+      const xr = x * cy - z * sy, zr = x * sy + z * cy;
+      const yr = y * cp - zr * sp, zz = y * sp + zr * cp + D;
+      if (zz < 40) continue;
+      const bx = (W / 2 + xr * f / zz) * scale + (Math.random() - 0.5) * 0.8;
+      const by = (H / 2 + yr * f / zz) * scale + (Math.random() - 0.5) * 0.8;
+      if (bx < -20 || by < -20 || bx > cw + 20 || by > ch + 20) continue;
+      const fsz = Math.max(9, Math.min(14, Math.round(11 * Math.sqrt(1000 / zz))));
+      const v = Math.round(c * bgi.fin);
+      bucket[fsz].push(bx, by, skyA * bgi.alpha * (0.45 + 0.55 * c) * Math.max(0.5, Math.min(1, D / zz)), v);
+    }
+    for (let fs = 9; fs <= 14; fs++) {
+      const q = bucket[fs]; if (!q.length) continue;
+      lctx.font = FONTS[fs];
+      for (let j = 0; j < q.length; j += 4) { lctx.globalAlpha = q[j + 2]; lctx.fillText(STR[q[j + 3]], q[j], q[j + 1]); }
+      q.length = 0;
+    }
+    lctx.globalAlpha = 1;
+
+    let order = 0;
+    const placed = [], items = [];
+    for (let i = 0; i < nuclei.length; i++) {
+      const n = nuclei[i];
+      let tgt = 0;
+      if (S.labels === n.g) { tgt = shotTime > 2.2 + order * 0.45 ? 1 : 0; order++; }
+      else if (S.labels === "heads" && n.first) tgt = shotTime > 2.5 ? 0.6 : 0;
+      labelAlpha[i] += (tgt - labelAlpha[i]) * (1 - Math.exp(-dt * (tgt > labelAlpha[i] ? 1.4 : 2.5)));
+      const a = labelAlpha[i];
+      if (a < 0.01) continue;
+      const x = n.p[0] - cam.tx, y = n.p[1] - cam.ty, z = n.p[2] - cam.tz;
+      const xr = x * cy - z * sy, zr = x * sy + z * cy;
+      const yr = y * cp - zr * sp, zz = y * sp + zr * cp + D;
+      if (zz < 40) continue;
+      items.push({ n, a, zz, sx: (W / 2 + xr * f / zz) * scale, sy: (H / 2 + yr * f / zz) * scale });
+    }
+    items.sort((p, q) => p.sy - q.sy);
+    for (const it of items) {
+      const big = it.n.first && S.labels !== "heads";
+      const fs = big ? size * 1.3 : size;
+      lctx.font = `italic ${big ? 500 : 400} ${fs}px "Cormorant Garamond", Georgia, serif`;
+      const tw = lctx.measureText(it.n.word).width;
+      const left = it.sx > cw * 0.62;
+      let lx = left ? it.sx - 27 - tw : it.sx + 27, ly = it.sy - 25, dy = 0;
+      for (let tries = 0; tries < 8; tries++) {
+        const hit = placed.some(r => lx < r.x + r.w + 8 && lx + tw + 8 > r.x && ly + dy - fs < r.y && ly + dy + 6 > r.y - r.h);
+        if (!hit) break; dy += fs * 0.95;
+      }
+      ly += dy;
+      placed.push({ x: lx, y: ly, w: tw, h: fs });
+      lctx.globalAlpha = skyA * it.a * Math.max(0.3, Math.min(1, D / it.zz));
+      lctx.strokeStyle = "rgba(242,242,239,0.6)"; lctx.lineWidth = 0.75;
+      lctx.beginPath();
+      lctx.arc(it.sx, it.sy, 2, 0, 6.2832);
+      lctx.moveTo(it.sx + (left ? -4 : 4), it.sy - 4);
+      lctx.lineTo(left ? lx + tw + 4 : lx - 4, ly - fs * 0.3);
+      lctx.stroke();
+      lctx.shadowColor = "rgba(0,0,0,0.95)"; lctx.shadowBlur = 14;
+      lctx.fillStyle = "#f2f2ef";
+      lctx.fillText(it.n.word, lx, ly);
+      lctx.fillText(it.n.word, lx, ly);
+      lctx.shadowBlur = 0;
+    }
+    lctx.globalAlpha = 1;
+  }
+
+  function drawTextOverlay(dt, cw, ch, scale) {
+    if (tStep < 0 || !textReady || shot !== REC) { brA.fill(0); return; }
+    const st = STEPS[tStep], hw = W / 2, hh = H / 2, fa = Math.min(1, (txMix - 0.5) * 2);
+    if (fa <= 0) return;
+    lctx.fillStyle = "#f2f2ef"; lctx.strokeStyle = "#f2f2ef";
+    // Índices de token, pequeños como insectos
+    if (st.idx) {
+      const fs = Math.max(9, Math.min(12, fontPx * scale * 0.2));
+      lctx.font = `400 ${Math.round(fs)}px ${SANS}`;
+      lctx.textAlign = "center";
+      LAY[tStep].order.forEach((k, j) => {
+        const t = TK[k], i = t.i;
+        let a = (tTime - TAPP[i]) / 0.6; a = a < 0 ? 0 : a > 1 ? 1 : a;
+        if (a <= 0) return;
+        const x = (hw + (TCX[i] + t.w / 2) * fontPx) * scale + Math.sin(T * 3 + i) * 0.6;
+        const y = (hh + (TCY[i] - 0.92) * fontPx) * scale + Math.cos(T * 2.3 + i * 1.7) * 0.6;
+        lctx.globalAlpha = 0.7 * a * fa;
+        lctx.fillText(STR[j + 1], x, y);
+      });
+      lctx.textAlign = "start";
+    }
+    // Corchetes de la recursión
+    lctx.lineWidth = 0.8;
+    BR.forEach((b, bi) => {
+      const on = b.st === tStep && tTime > lastApp + 0.6 ? 1 : 0;
+      brA[bi] += (on - brA[bi]) * (1 - Math.exp(-dt * (on ? 1.6 : 3)));
+      if (brA[bi] < 0.01) return;
+      const order = LAY[Math.max(tStep, b.st)].order, i0 = order.indexOf(b.f), i1 = order.indexOf(b.t);
+      if (i0 < 0 || i1 < 0) return;
+      let seg = null; const segs = [];
+      for (let j = i0; j <= i1; j++) {
+        const t = TK[order[j]], x0 = TCX[t.i], x1 = TCX[t.i] + t.w, y = TCY[t.i];
+        if (seg && Math.abs(seg.y - y) < 0.1) seg.x1 = x1; else { seg = { x0, x1, y }; segs.push(seg); }
+      }
+      lctx.globalAlpha = 0.55 * brA[bi] * fa;
+      segs.forEach((sg, si) => {
+        const y = (hh + (sg.y + 0.3 + b.d * 0.15) * fontPx) * scale, x0 = (hw + sg.x0 * fontPx) * scale, x1 = (hw + sg.x1 * fontPx) * scale, tk = 0.08 * fontPx * scale;
+        lctx.beginPath();
+        lctx.moveTo(x0, y - (si === 0 ? tk : 0)); lctx.lineTo(x0, y); lctx.lineTo(x1, y); lctx.lineTo(x1, y - (si === segs.length - 1 ? tk : 0));
+        lctx.stroke();
+      });
+    });
+    lctx.globalAlpha = 1;
+  }
+
+  // ---------- Controles ----------
+  const hint = document.getElementById("hint");
+  let hintTimer = setTimeout(() => hint.classList.add("off"), 7000);
+  const go = (s) => { s = Math.max(0, Math.min(SHOTS.length - 1, s)); if (s !== shot) { shot = s; shotTime = 0; if (s === REC) { resetText(); fmActive = false; } if (s === CYC) startCycle(); } };
+  const next = () => {
+    if (shot === REC && textReady && tStep < STEPS.length - 1) { if (tStep < 0) { tTime = Math.max(tTime, 2.8); } startStep(tStep + 1); }
+    else if (shot === CYC) advanceStage();
+    else go(shot + 1);
+  };
+  addEventListener("keydown", (e) => {
+    if (["ArrowRight", "PageDown", " ", "Enter"].includes(e.key)) { e.preventDefault(); next(); }
+    else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) { e.preventDefault(); go(shot - 1); }
+    else if (e.key >= "1" && e.key <= "7") go(+e.key - 1);
+    else if (e.key === "f" || e.key === "F") { if (!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); }
+    else if (e.key === "h" || e.key === "H") { clearTimeout(hintTimer); hint.classList.toggle("off"); }
+  });
+  document.getElementById("swap").addEventListener("click", e => e.stopPropagation());
+  addEventListener("click", next);
+  let idle; addEventListener("mousemove", () => { document.body.classList.remove("idle"); clearTimeout(idle); idle = setTimeout(() => document.body.classList.add("idle"), 2000); });
+  const params = new URLSearchParams(location.search); if (params.has("toma")) go(+params.get("toma") - 1);
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

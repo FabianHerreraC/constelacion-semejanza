@@ -66,6 +66,18 @@ html, body {
   cursor: pointer;
 }
 .tools button:hover { background: var(--ink); color: var(--bg); }
+.tools { display: flex; gap: 6px; }
+#swap {
+  font: 11px/1 var(--font);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--mute);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  padding: 8px 12px;
+  background: var(--bg);
+}
+#swap:hover { color: var(--ink); border-color: var(--ink); }
 
 .foot {
   position: fixed;
@@ -207,4 +219,5 @@ html, body {
   #axes .kw { font-size: 7.5px; letter-spacing: -.01em; text-transform: none; }
   #axes .kw.close::after { content: none; }
   .hint { display: none; }
+  #swap { padding: 8px 9px; }
 }

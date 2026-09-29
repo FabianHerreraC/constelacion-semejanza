@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { DATA } from './data.js';
-import { PROPS } from './props.js';
+import { DATA } from './data.js?v=2026-09-29';
+import { PROPS } from './props.js?v=2026-09-29';
 
 const R = 10;            // radio de la esfera de polos
 const N = DATA.length;
@@ -298,7 +298,8 @@ renderer.domElement.addEventListener('pointermove', e => {
   stage.classList.toggle('pointing', i >= 0);
 });
 document.getElementById('close').addEventListener('click', clear);
-window.addEventListener('keydown', e => { if (e.key === 'Escape') clear(); });
+const typing = e => e.target instanceof HTMLInputElement;
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && !typing(e)) clear(); });
 
 // ---------- Pantalla completa ----------
 const fsBtn = document.getElementById('fs');
@@ -379,9 +380,70 @@ function toggleAxis(i) {
   TARGET = targetPositions();
 }
 window.addEventListener('keydown', e => {
+  if (typing(e)) return;
   const n = Number(e.key);
   if (n >= 1 && n <= K && !e.metaKey && !e.ctrlKey) toggleAxis(n - 1);
 });
+
+// ---------- Buscador de nombres ----------
+// Sin mayúsculas ni tildes: «maria» encuentra «María»
+const fold = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+const FOLDED = DATA.map(p => fold(p.n));
+const qEl = document.getElementById('q');
+const resEl = document.getElementById('results');
+let hits = [], cursor = 0;
+const MAX_HITS = 8;
+
+function closeResults() {
+  resEl.hidden = true;
+  qEl.setAttribute('aria-expanded', 'false');
+}
+function renderResults() {
+  const q = fold(qEl.value);
+  if (!q) { hits = []; closeResults(); return; }
+  // Primero los que empiezan por la búsqueda, luego los que la contienen
+  const starts = [], inside = [];
+  FOLDED.forEach((n, i) => { if (n.startsWith(q)) starts.push(i); else if (n.includes(q)) inside.push(i); });
+  hits = starts.concat(inside);
+  cursor = 0;
+  const shown = hits.slice(0, MAX_HITS);
+  resEl.innerHTML = shown.length
+    ? shown.map((i, k) => `<li role="option" data-i="${i}" aria-selected="${k === cursor}"><b></b><span>${DATA[i].h.slice(5).replace('-', '/')}</span></li>`).join('')
+      + (hits.length > MAX_HITS ? `<li class="more">y ${hits.length - MAX_HITS} más…</li>` : '')
+    : '<li class="more">Nadie con ese nombre</li>';
+  resEl.querySelectorAll('li[data-i] b').forEach((b, k) => { b.textContent = DATA[shown[k]].n || '—'; });
+  resEl.hidden = false;
+  qEl.setAttribute('aria-expanded', 'true');
+}
+function moveCursor(d) {
+  const n = Math.min(hits.length, MAX_HITS);
+  if (!n) return;
+  cursor = (cursor + d + n) % n;
+  resEl.querySelectorAll('li[data-i]').forEach((li, k) => li.setAttribute('aria-selected', String(k === cursor)));
+}
+function choose(i) {
+  // Si no hay ejes encendidos, todos los puntos están en el centro: se encienden los 7
+  if (!active.some(Boolean)) PROPS.forEach((_, a) => toggleAxis(a));
+  selectPerson(i);
+  qEl.value = DATA[i].n;
+  closeResults();
+  qEl.blur();
+}
+qEl.addEventListener('input', renderResults);
+qEl.addEventListener('focus', () => { if (qEl.value) renderResults(); });
+qEl.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') { e.preventDefault(); moveCursor(1); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); moveCursor(-1); }
+  else if (e.key === 'Enter') { if (hits.length) choose(hits[cursor]); }
+  else if (e.key === 'Escape') { qEl.value = ''; closeResults(); qEl.blur(); }
+});
+resEl.addEventListener('pointerdown', e => {
+  const li = e.target.closest('li[data-i]');
+  if (!li) return;
+  e.preventDefault();                      // que el input no pierda el foco antes del clic
+  choose(Number(li.dataset.i));
+});
+qEl.addEventListener('blur', () => setTimeout(closeResults, 120));
 
 // Anima el fundido de los ejes y el desplazamiento de los puntos hacia su destino
 function animate() {

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Constelación — Imagen y semejanza</title>
   <meta name="description" content="Las opiniones de Imagen y semejanza sobre siete proposiciones polares acerca de la inteligencia artificial, en un volumen tridimensional.">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=2026-09-29">
   <script type="importmap">
   {
     "imports": {
@@ -21,6 +21,10 @@
   <header class="head">
     <h1>Imagen y semejanza</h1>
     <p><span id="count">1240</span> opiniones · 7 proposiciones</p>
+    <div class="search" role="search">
+      <input id="q" type="search" placeholder="Buscar un nombre" autocomplete="off" spellcheck="false" aria-label="Buscar un nombre" aria-controls="results" aria-expanded="false">
+      <ol id="results" role="listbox" hidden></ol>
+    </div>
     <p id="filter" hidden></p>
   </header>
 
@@ -38,9 +42,9 @@
 
   <footer class="foot">
     <nav id="axes" aria-label="Proposiciones"></nav>
-    <p class="hint">Sobre cada botón: promedio ± desviación estándar (0–100) y la proposición que gana · enciende las proposiciones (1–7) · arrastra para girar · clic en un punto para ver quién es</p>
+    <p class="hint">Sobre cada botón: promedio ± desviación estándar (0–100) y la proposición que gana · enciende las proposiciones (1–7) · arrastra para girar · clic en un punto o busca un nombre para ver quién es</p>
   </footer>
 
-  <script type="module" src="main.js"></script>
+  <script type="module" src="main.js?v=2026-09-29"></script>
 </body>
 </html>

@@ -7,6 +7,8 @@ import { PROPS } from './props.js';
 const R = 10;            // radio de la esfera de polos
 const N = DATA.length;
 const K = PROPS.length;
+// Con más respuestas, hilos más tenues y puntos más chicos (calibrado con las 216 del ensayo)
+const DENS = Math.min(1, Math.sqrt(216 / N));
 
 // ---------- Ejes: 7 direcciones cuyos 14 polos (±d) quedan repartidos en la esfera ----------
 function axisDirections(k) {
@@ -123,7 +125,7 @@ const INK = new THREE.Color(0x111111), GHOST = new THREE.Color(0xd0d0d0), HOT = 
   const m = new THREE.Matrix4();
   DATA.forEach((p, i) => {
     const intensity = p.v.reduce((s, v) => s + Math.abs(lean(v)), 0) / K;
-    const s = 0.045 + 0.1 * intensity;
+    const s = (0.045 + 0.1 * intensity) * (0.55 + 0.45 * DENS);
     BASE_SCALE.push(s);
     m.makeScale(s, s, s).setPosition(POS[i]);
     dots.setMatrixAt(i, m);
@@ -165,7 +167,7 @@ function paintThreads(strengthOf = strength) {
   }
   threadGeo.attributes.color.needsUpdate = true;
 }
-const idle = s => 0.16 * WEIGHT[s] ** 1.5;
+const idle = s => 0.16 * DENS * WEIGHT[s] ** 1.5;
 paintThreads(idle);
 
 // ---------- Selección ----------
@@ -213,7 +215,7 @@ function selectPerson(i) {
   const p = DATA[i];
   scaleDot(i, 1.9);
   tintDots(j => (j === i ? HOT : GHOST));
-  paintThreads(s => (Math.floor(s / K) === i ? 0.25 + 0.75 * WEIGHT[s] : 0.04 * WEIGHT[s]));
+  paintThreads(s => (Math.floor(s / K) === i ? 0.25 + 0.75 * WEIGHT[s] : 0.04 * DENS * WEIGHT[s]));
   poleNodes.forEach(n => {
     const l = lean(p.v[n.axis]);
     const toward = (l < 0 && n.side === 'a') || (l > 0 && n.side === 'b');
@@ -251,7 +253,7 @@ function selectPole(node) {
   tintDots(i => (toward(i) ? HOT : GHOST));
   paintThreads(s => {
     const i = Math.floor(s / K), a = s % K;
-    return a === node.axis && toward(i) ? 0.15 + 0.55 * WEIGHT[s] : 0.03 * WEIGHT[s];
+    return a === node.axis && toward(i) ? (0.15 + 0.55 * WEIGHT[s]) * DENS : 0.03 * DENS * WEIGHT[s];
   });
   const count = DATA.filter((_, i) => toward(i)).length;
   filterEl.textContent = `${count} de ${N} se inclinan hacia «${PROPS[node.axis][node.side]}»`;
@@ -350,18 +352,22 @@ const STATS = PROPS.map((_, i) => {
   const xs = DATA.map(p => p.v[i]);
   const mean = xs.reduce((s, x) => s + x, 0) / N;
   const sd = Math.sqrt(xs.reduce((s, x) => s + (x - mean) ** 2, 0) / (N - 1));
-  return { mean, sd };
+  return { mean, sd, nA: xs.filter(x => x < 50).length, nB: xs.filter(x => x > 50).length };
 });
 const axisBtns = PROPS.map((p, i) => {
   const b = document.createElement('button');
   b.type = 'button';
   b.setAttribute('aria-pressed', 'false');
-  const { mean, sd } = STATS[i];
-  // Gana la proposición hacia la que cae el promedio; a menos de 5 puntos de 50 es un triunfo ajustado
+  const { mean, sd, nA, nB } = STATS[i];
+  // Gana la proposición hacia la que caen el promedio y la mayoría; si no coinciden, es un empate.
+  // A menos de 5 puntos de 50 es un triunfo ajustado.
   const wins = mean < 50 ? 'a' : 'b';
-  const close = Math.abs(mean - 50) < 5;
-  b.title = `Gana: «${p[wins]}»${close ? ' (por poco)' : ''}\nPromedio ${mean.toFixed(1)} · desviación estándar ${sd.toFixed(1)}\n0 = ${p.a}\n100 = ${p.b}`;
-  b.innerHTML = `<i class="stat">${Math.round(mean)}<small>±${Math.round(sd)}</small><em class="kw${close ? ' close' : ''}">${p['k' + wins]}</em></i><span>${p.num}</span> ${p.titulo}`;
+  const tie = (nA > nB ? 'a' : 'b') !== wins || nA === nB;
+  const close = tie || Math.abs(mean - 50) < 5;
+  const word = tie ? 'Empate' : p['k' + wins];
+  const verdict = tie ? `Empate: el promedio se inclina hacia «${p[wins]}», pero la mayoría hacia la otra` : `Gana: «${p[wins]}»${close ? ' (por poco)' : ''}`;
+  b.title = `${verdict}\nPromedio ${mean.toFixed(1)} · desviación estándar ${sd.toFixed(1)}\n${nA} hacia 0 · ${nB} hacia 100\n0 = ${p.a}\n100 = ${p.b}`;
+  b.innerHTML = `<i class="stat">${Math.round(mean)}<small>±${Math.round(sd)}</small><em class="kw${close ? ' close' : ''}${tie ? ' tie' : ''}">${word}</em></i><span>${p.num}</span> ${p.titulo}`;
   b.addEventListener('click', () => toggleAxis(i));
   axesNav.appendChild(b);
   return b;

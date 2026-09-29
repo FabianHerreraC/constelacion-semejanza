@@ -137,6 +137,7 @@ html, body {
 }
 #axes .kw.close { color: var(--mute); }
 #axes .kw.close::after { content: " ≈"; }
+#axes .kw.tie::after { content: none; }
 #axes button:hover { background: #eee; }
 #axes button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 
